@@ -1,0 +1,6 @@
+[submodule "zephyr"]
+	path = zephyr
+	url = https://github.com/mmoskal/zephyr
+[submodule "codal-core"]
+	path = codal-core
+	url = https://github.com/mmoskal/codal-core
