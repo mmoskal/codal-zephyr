@@ -1,9 +1,14 @@
 #!/bin/sh
 
-set -ex
+set -x
 
 . ./scripts/env.sh "$0" "$@"
 
 cd build
-make
-cd ..
+#ln -s `pwd`/cmake-cache ~/.cache/zephyr
+make "$@"
+ex=$?
+
+# do something?
+
+exit $ex
