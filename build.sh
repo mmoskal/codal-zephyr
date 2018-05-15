@@ -5,5 +5,5 @@ set -ex
 . ./scripts/env.sh "$0" "$@"
 
 cd build
-make -j10
+make
 cd ..
