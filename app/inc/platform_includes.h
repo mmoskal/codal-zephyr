@@ -7,6 +7,11 @@
 #include <stdarg.h>
 #include <math.h>
 
+#include <zephyr.h>
+#include <board.h>
+#include <device.h>
+#include <gpio.h>
+
 #include <linker/linker-defs.h>
 
 #define PROCESSOR_WORD_TYPE uint32_t

@@ -73,4 +73,7 @@ set(CODAL_CORE_SRC
 set(CODAL_CORE_NOSRC
 )
 
-target_sources(app PRIVATE src/main.c ${CODAL_CORE_SRC})
+target_sources(app PRIVATE 
+	src/main.cpp 
+	src/codal_target_hal.cpp 
+	${CODAL_CORE_SRC})
