@@ -24,7 +24,7 @@ DEALINGS IN THE SOFTWARE.
 */
 
 /**
- * Class definition for Pin.
+ * Class definition for ZPin.
  *
  * Commonly represents an I/O pin on the edge connector.
  */
@@ -39,38 +39,39 @@ DEALINGS IN THE SOFTWARE.
 
 namespace codal
 {
-inline PinMode map(codal::PullMode pinMode)
+
+inline int map(codal::PullMode pinMode)
 {
     switch (pinMode)
     {
     case PullMode::Up:
-        return PinMode::PullUp;
+        return GPIO_PUD_PULL_UP;
     case PullMode::Down:
-        return PinMode::PullDown;
+        return GPIO_PUD_PULL_DOWN;
     case PullMode::None:
-        return PinMode::PullNone;
+        return GPIO_PUD_NORMAL;
     }
 
-    return PinMode::PullNone;
+    return GPIO_PUD_NORMAL;
 }
 
 /**
  * Constructor.
- * Create a Pin instance, generally used to represent a pin on the edge connector.
+ * Create a ZPin instance, generally used to represent a pin on the edge connector.
  *
  * @param id the unique EventModel id of this component.
  *
- * @param name the mbed PinName for this Pin instance.
+ * @param name the mbed PinName for this ZPin instance.
  *
- * @param capability the capabilities this Pin instance should have.
+ * @param capability the capabilities this ZPin instance should have.
  *                   (PIN_CAPABILITY_DIGITAL, PIN_CAPABILITY_ANALOG, PIN_CAPABILITY_AD,
  * PIN_CAPABILITY_ALL)
  *
  * @code
- * Pin P0(DEVICE_ID_IO_P0, DEVICE_PIN_P0, PIN_CAPABILITY_ALL);
+ * ZPin P0(DEVICE_ID_IO_P0, DEVICE_PIN_P0, PIN_CAPABILITY_ALL);
  * @endcode
  */
-Pin::Pin(int id, PinNumber name, PinCapability capability) : codal::Pin(id, name, capability)
+ZPin::ZPin(int id, PinNumber name, PinCapability capability) : codal::Pin(id, name, capability)
 {
     this->pullMode = DEVICE_DEFAULT_PULLMODE;
 
@@ -85,7 +86,7 @@ Pin::Pin(int id, PinNumber name, PinCapability capability) : codal::Pin(id, name
  *
  * Used only when pin changes mode (i.e. Input/Output/Analog/Digital)
  */
-void Pin::disconnect()
+void ZPin::disconnect()
 {
     // This is a bit ugly, but rarely used code.
     // It would be much better to use some polymorphism here, but the mBed I/O classes aren't
@@ -124,11 +125,11 @@ void Pin::disconnect()
  * DEVICE_NOT_SUPPORTED if the given pin does not have digital capability.
  *
  * @code
- * Pin P0(DEVICE_ID_IO_P0, DEVICE_PIN_P0, PIN_CAPABILITY_BOTH);
+ * ZPin P0(DEVICE_ID_IO_P0, DEVICE_PIN_P0, PIN_CAPABILITY_BOTH);
  * P0.setDigitalValue(1); // P0 is now HI
  * @endcode
  */
-int Pin::setDigitalValue(int value)
+int ZPin::setDigitalValue(int value)
 {
     // Check if this pin has a digital mode...
     if (!(PIN_CAPABILITY_DIGITAL & capability))
@@ -160,11 +161,11 @@ int Pin::setDigitalValue(int value)
  *         if the given pin does not have digital capability.
  *
  * @code
- * Pin P0(DEVICE_ID_IO_P0, DEVICE_PIN_P0, PIN_CAPABILITY_BOTH);
+ * ZPin P0(DEVICE_ID_IO_P0, DEVICE_PIN_P0, PIN_CAPABILITY_BOTH);
  * P0.getDigitalValue(); // P0 is either 0 or 1;
  * @endcode
  */
-int Pin::getDigitalValue()
+int ZPin::getDigitalValue()
 {
     // check if this pin has a digital mode...
     if (!(PIN_CAPABILITY_DIGITAL & capability))
@@ -195,17 +196,17 @@ int Pin::getDigitalValue()
  *         if the given pin does not have digital capability.
  *
  * @code
- * Pin P0(DEVICE_ID_IO_P0, DEVICE_PIN_P0, PIN_CAPABILITY_BOTH);
+ * ZPin P0(DEVICE_ID_IO_P0, DEVICE_PIN_P0, PIN_CAPABILITY_BOTH);
  * P0.getDigitalValue(PullUp); // P0 is either 0 or 1;
  * @endcode
  */
-int Pin::getDigitalValue(PullMode pull)
+int ZPin::getDigitalValue(PullMode pull)
 {
     setPull(pull);
     return getDigitalValue();
 }
 
-int Pin::obtainAnalogChannel()
+int ZPin::obtainAnalogChannel()
 {
     // Move into an analogue input state if necessary, if we are no longer the focus of a DynamicPWM
     // instance, allocate ourselves again!
@@ -227,7 +228,7 @@ int Pin::obtainAnalogChannel()
  * @return DEVICE_OK on success, DEVICE_INVALID_PARAMETER if value is out of range, or
  * DEVICE_NOT_SUPPORTED if the given pin does not have analog capability.
  */
-int Pin::setAnalogValue(int value)
+int ZPin::setAnalogValue(int value)
 {
     // check if this pin has an analogue mode...
     if (!(PIN_CAPABILITY_DIGITAL & capability))
@@ -266,7 +267,7 @@ int Pin::setAnalogValue(int value)
  * @return DEVICE_OK on success, DEVICE_INVALID_PARAMETER if value is out of range, or
  * DEVICE_NOT_SUPPORTED if the given pin does not have analog capability.
  */
-int Pin::setServoValue(int value, int range, int center)
+int ZPin::setServoValue(int value, int range, int center)
 {
     // check if this pin has an analogue mode...
     if (!(PIN_CAPABILITY_ANALOG & capability))
@@ -292,18 +293,18 @@ int Pin::setServoValue(int value, int range, int center)
 }
 
 /**
- * Configures this IO pin as an analogue input (if necessary), and samples the Pin for its analog
+ * Configures this IO pin as an analogue input (if necessary), and samples the ZPin for its analog
  * value.
  *
  * @return the current analogue level on the pin, in the range 0 - 1024, or
  *         DEVICE_NOT_SUPPORTED if the given pin does not have analog capability.
  *
  * @code
- * Pin P0(DEVICE_ID_IO_P0, DEVICE_PIN_P0, PIN_CAPABILITY_BOTH);
+ * ZPin P0(DEVICE_ID_IO_P0, DEVICE_PIN_P0, PIN_CAPABILITY_BOTH);
  * P0.getAnalogValue(); // P0 is a value in the range of 0 - 1024
  * @endcode
  */
-int Pin::getAnalogValue()
+int ZPin::getAnalogValue()
 {
     // check if this pin has an analogue mode...
     if (!(PIN_CAPABILITY_ANALOG & capability))
@@ -326,7 +327,7 @@ int Pin::getAnalogValue()
  *
  * @return 1 if pin is an analog or digital input, 0 otherwise.
  */
-int Pin::isInput()
+int ZPin::isInput()
 {
     return (status & (IO_STATUS_DIGITAL_IN | IO_STATUS_ANALOG_IN)) == 0 ? 0 : 1;
 }
@@ -336,7 +337,7 @@ int Pin::isInput()
  *
  * @return 1 if pin is an analog or digital output, 0 otherwise.
  */
-int Pin::isOutput()
+int ZPin::isOutput()
 {
     return (status & (IO_STATUS_DIGITAL_OUT | IO_STATUS_ANALOG_OUT)) == 0 ? 0 : 1;
 }
@@ -346,7 +347,7 @@ int Pin::isOutput()
  *
  * @return 1 if pin is digital, 0 otherwise.
  */
-int Pin::isDigital()
+int ZPin::isDigital()
 {
     return (status & (IO_STATUS_DIGITAL_IN | IO_STATUS_DIGITAL_OUT)) == 0 ? 0 : 1;
 }
@@ -356,7 +357,7 @@ int Pin::isDigital()
  *
  * @return 1 if pin is analog, 0 otherwise.
  */
-int Pin::isAnalog()
+int ZPin::isAnalog()
 {
     return (status & (IO_STATUS_ANALOG_IN | IO_STATUS_ANALOG_OUT)) == 0 ? 0 : 1;
 }
@@ -373,7 +374,7 @@ int Pin::isAnalog()
  * @code
  * DeviceMessageBus bus;
  *
- * Pin P0(DEVICE_ID_IO_P0, DEVICE_PIN_P0, PIN_CAPABILITY_ALL);
+ * ZPin P0(DEVICE_ID_IO_P0, DEVICE_PIN_P0, PIN_CAPABILITY_ALL);
  * if(P0.isTouched())
  * {
  *     //do something!
@@ -383,7 +384,7 @@ int Pin::isAnalog()
  * bus.listen(DEVICE_ID_IO_P0, DEVICE_BUTTON_EVT_CLICK, someFunction);
  * @endcode
  */
-int Pin::isTouched()
+int ZPin::isTouched()
 {
     // check if this pin has a touch mode...
     if (!(PIN_CAPABILITY_DIGITAL & capability))
@@ -409,7 +410,7 @@ int Pin::isTouched()
  * @return DEVICE_OK on success, DEVICE_INVALID_PARAMETER if value is out of range, or
  * DEVICE_NOT_SUPPORTED if the given pin does not have analog capability.
  */
-int Pin::setServoPulseUs(int pulseWidth)
+int ZPin::setServoPulseUs(int pulseWidth)
 {
     // check if this pin has an analogue mode...
     if (!(PIN_CAPABILITY_ANALOG & capability))
@@ -439,7 +440,7 @@ int Pin::setServoPulseUs(int pulseWidth)
  *
  * @return DEVICE_OK on success.
  */
-int Pin::setAnalogPeriodUs(int period)
+int ZPin::setAnalogPeriodUs(int period)
 {
     int ret;
 
@@ -462,7 +463,7 @@ int Pin::setAnalogPeriodUs(int period)
  * @return DEVICE_OK on success, or DEVICE_NOT_SUPPORTED if the
  *         given pin is not configured as an analog output.
  */
-int Pin::setAnalogPeriod(int period)
+int ZPin::setAnalogPeriod(int period)
 {
     return setAnalogPeriodUs(period * 1000);
 }
@@ -473,7 +474,7 @@ int Pin::setAnalogPeriod(int period)
  * @return the period on success, or DEVICE_NOT_SUPPORTED if the
  *         given pin is not configured as an analog output.
  */
-uint32_t Pin::getAnalogPeriodUs()
+uint32_t ZPin::getAnalogPeriodUs()
 {
     if (!(status & IO_STATUS_ANALOG_OUT))
         return DEVICE_NOT_SUPPORTED;
@@ -487,7 +488,7 @@ uint32_t Pin::getAnalogPeriodUs()
  * @return the period on success, or DEVICE_NOT_SUPPORTED if the
  *         given pin is not configured as an analog output.
  */
-int Pin::getAnalogPeriod()
+int ZPin::getAnalogPeriod()
 {
     return getAnalogPeriodUs() / 1000;
 }
@@ -500,7 +501,7 @@ int Pin::getAnalogPeriod()
  * @return DEVICE_NOT_SUPPORTED if the current pin configuration is anything other
  *         than a digital input, otherwise DEVICE_OK.
  */
-int Pin::setPull(PullMode pull)
+int ZPin::setPull(PullMode pull)
 {
     pullMode = pull;
 
@@ -525,7 +526,7 @@ int Pin::setPull(PullMode pull)
  *
  * @param eventValue the event value to distribute onto the message bus.
  */
-void Pin::pulseWidthEvent(int eventValue)
+void ZPin::pulseWidthEvent(int eventValue)
 {
     Event evt(id, eventValue, CREATE_ONLY);
     uint64_t now = evt.timestamp;
@@ -543,7 +544,7 @@ void Pin::pulseWidthEvent(int eventValue)
 /**
  * Interrupt handler for when an rise interrupt is triggered.
  */
-void Pin::onRise()
+void ZPin::onRise()
 {
     if (status & IO_STATUS_EVENT_PULSE_ON_EDGE)
         pulseWidthEvent(DEVICE_PIN_EVT_PULSE_LO);
@@ -555,7 +556,7 @@ void Pin::onRise()
 /**
  * Interrupt handler for when an fall interrupt is triggered.
  */
-void Pin::onFall()
+void ZPin::onFall()
 {
     if (status & IO_STATUS_EVENT_PULSE_ON_EDGE)
         pulseWidthEvent(DEVICE_PIN_EVT_PULSE_HI);
@@ -573,7 +574,7 @@ void Pin::onFall()
  *
  * @return DEVICE_OK on success
  */
-int Pin::enableRiseFallEvents(int eventType)
+int ZPin::enableRiseFallEvents(int eventType)
 {
     // if we are in neither of the two modes, configure pin as a TimedInterruptIn.
     if (!(status & (IO_STATUS_EVENT_ON_EDGE | IO_STATUS_EVENT_PULSE_ON_EDGE)))
@@ -582,8 +583,8 @@ int Pin::enableRiseFallEvents(int eventType)
         pin = new TimedInterruptIn((PinName)name);
 
         ((TimedInterruptIn *)pin)->mode(map(pullMode));
-        ((TimedInterruptIn *)pin)->rise(callback(this, &Pin::onRise));
-        ((TimedInterruptIn *)pin)->fall(callback(this, &Pin::onFall));
+        ((TimedInterruptIn *)pin)->rise(callback(this, &ZPin::onRise));
+        ((TimedInterruptIn *)pin)->fall(callback(this, &ZPin::onFall));
     }
 
     status &= ~(IO_STATUS_EVENT_ON_EDGE | IO_STATUS_EVENT_PULSE_ON_EDGE);
@@ -599,11 +600,11 @@ int Pin::enableRiseFallEvents(int eventType)
 
 /**
  * If this pin is in a mode where the pin is generating events, it will destruct
- * the current instance attached to this Pin instance.
+ * the current instance attached to this ZPin instance.
  *
  * @return DEVICE_OK on success.
  */
-int Pin::disableEvents()
+int ZPin::disableEvents()
 {
     if (status & (IO_STATUS_EVENT_ON_EDGE | IO_STATUS_EVENT_PULSE_ON_EDGE | IO_STATUS_TOUCH_IN))
         disconnect();
@@ -612,7 +613,7 @@ int Pin::disableEvents()
 }
 
 /**
- * Configures the events generated by this Pin instance.
+ * Configures the events generated by this ZPin instance.
  *
  * DEVICE_PIN_EVENT_ON_EDGE - Configures this pin to a digital input, and generates events whenever
  * a rise/fall is detected on this pin. (DEVICE_PIN_EVT_RISE, DEVICE_PIN_EVT_FALL)
@@ -628,7 +629,7 @@ int Pin::disableEvents()
  * @code
  * DeviceMessageBus bus;
  *
- * Pin P0(DEVICE_ID_IO_P0, DEVICE_PIN_P0, PIN_CAPABILITY_BOTH);
+ * ZPin P0(DEVICE_ID_IO_P0, DEVICE_PIN_P0, PIN_CAPABILITY_BOTH);
  * P0.eventOn(DEVICE_PIN_EVENT_ON_PULSE);
  *
  * void onPulse(Event evt)
@@ -645,7 +646,7 @@ int Pin::disableEvents()
  * 85us, around 5khz. If more precision is required, please use the InterruptIn class supplied by
  * ARM mbed.
  */
-int Pin::eventOn(int eventType)
+int ZPin::eventOn(int eventType)
 {
     switch (eventType)
     {

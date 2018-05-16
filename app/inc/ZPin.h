@@ -49,6 +49,7 @@ class ZPin : public codal::Pin
 {
 protected:
     struct device *port;
+    uint16_t flags;
     uint8_t pinId;
 
     /**
