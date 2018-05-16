@@ -48,9 +48,8 @@ namespace codal
 class ZPin : public codal::Pin
 {
 protected:
-    // The mbed object looking after this pin at any point in time (untyped due to dynamic
-    // behaviour).
-    void *pin;
+    struct device *port;
+    uint8_t pinId;
 
     /**
      * Disconnect any attached mBed IO from this pin.

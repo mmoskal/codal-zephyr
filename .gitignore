@@ -1,3 +1,4 @@
 build/
 Mbed*.cpp
 Mbed*.h
+.vscode/
