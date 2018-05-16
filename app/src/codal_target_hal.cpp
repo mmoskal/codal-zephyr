@@ -21,7 +21,7 @@ void target_wait_for_event()
 
 void target_wait(uint32_t milliseconds)
 {
-    k_busy_wait(milliseconds * 1000);    
+    k_busy_wait(milliseconds * 1000);
 }
 
 void target_reset()
@@ -39,8 +39,8 @@ void target_panic(int statusCode)
     DMESG("*** CODAL PANIC : [%d]", statusCode);
 #endif
 
-    for(;;);
+    for (;;)
+        ;
 }
 
 PROCESSOR_WORD_TYPE codal_heap_start = (PROCESSOR_WORD_TYPE)(&_end);
-

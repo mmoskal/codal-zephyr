@@ -13,12 +13,15 @@ inc
 	)
 
 
+set(CODAL_CORE_SRC_SKIPPED
+../codal-core/source/core/CodalFiber.cpp
+)
+
 set(CODAL_CORE_SRC
 ../codal-core/source/core/CodalCompat.cpp
 ../codal-core/source/core/CodalComponent.cpp
 ../codal-core/source/core/CodalDevice.cpp
 ../codal-core/source/core/CodalDmesg.cpp
-../codal-core/source/core/CodalFiber.cpp
 ../codal-core/source/core/CodalHeapAllocator.cpp
 ../codal-core/source/core/CodalListener.cpp
 ../codal-core/source/core/CodalUtil.cpp
@@ -75,5 +78,6 @@ set(CODAL_CORE_NOSRC
 
 target_sources(app PRIVATE 
 	src/main.cpp 
+	src/zfiber.cpp 
 	src/codal_target_hal.cpp 
 	${CODAL_CORE_SRC})

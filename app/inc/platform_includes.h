@@ -20,5 +20,10 @@
 
 #define DEVICE_COMPONENT_COUNT 64
 
+#define FIBER_STACK_SIZE 1024
+#define FIBER_PRIORITY -1
+
+
+
 
 #endif
