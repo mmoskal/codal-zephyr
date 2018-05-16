@@ -49,8 +49,6 @@ class ZPin : public codal::Pin
 {
 protected:
     struct device *port;
-    uint16_t flags;
-    uint8_t pinId;
 
     /**
      * Disconnect any attached mBed IO from this pin.

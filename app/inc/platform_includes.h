@@ -23,7 +23,8 @@
 #define FIBER_STACK_SIZE 1024
 #define FIBER_PRIORITY -1
 
-
-
+#define CODAL_ASSERT(cond)                                                                         \
+    if (!(cond))                                                                                   \
+    target_panic(909)
 
 #endif

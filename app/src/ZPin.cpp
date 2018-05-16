@@ -37,6 +37,18 @@ DEALINGS IN THE SOFTWARE.
 #include "codal-core/inc/types/Event.h"
 #include "mbed.h"
 
+#if CONFIG_SOC_FAMILY_STM32
+#define PORTPINS 16
+static const char *portNames[] = {
+    "GPIOA", "GPIOB", "GPIOC", "GPIOD", "GPIOE", "GPIOF", "GPIOG", "GPIOH",
+};
+#define NUM_PORTS (sizeof(portNames) / sizeof(portNames[0]))
+#else
+#error "SOC family for pin not defined"
+#endif
+
+#define PORTPINMASK (PORTPINS - 1)
+
 namespace codal
 {
 
@@ -78,7 +90,20 @@ ZPin::ZPin(int id, PinNumber name, PinCapability capability) : codal::Pin(id, na
     // Power up in a disconnected, low power state.
     // If we're unused, this is how it will stay...
     this->status = 0x00;
-    this->pin = NULL;
+    int portNo = (int)name / PORTPINS;
+    CODAL_ASSERT(portNo < NUM_PORTS);
+    this->port = device_get_binding(portNames[portNo]);
+    CODAL_ASSERT(this->port);
+}
+
+void ZPin::config()
+{
+    int flags = 0;
+
+    if (status & IO_STATUS_DIGITAL_OUT)
+        flags |= 
+    
+    gpio_pin_configure(this->port, this->name & PINMASK, )
 }
 
 /**
@@ -88,9 +113,7 @@ ZPin::ZPin(int id, PinNumber name, PinCapability capability) : codal::Pin(id, na
  */
 void ZPin::disconnect()
 {
-    // This is a bit ugly, but rarely used code.
-    // It would be much better to use some polymorphism here, but the mBed I/O classes aren't
-    // arranged in an inheritance hierarchy... yet. :-)
+    /*
     if (status & IO_STATUS_DIGITAL_IN)
         delete ((DigitalIn *)pin);
 
@@ -111,8 +134,7 @@ void ZPin::disconnect()
 
     if ((status & IO_STATUS_EVENT_ON_EDGE) || (status & IO_STATUS_EVENT_PULSE_ON_EDGE))
         delete ((TimedInterruptIn *)pin);
-
-    this->pin = NULL;
+    */
     this->status = 0;
 }
 
