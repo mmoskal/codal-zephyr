@@ -23,9 +23,6 @@ set(CODAL_CORE_SRC
 ../codal-core/source/core/CodalListener.cpp
 ../codal-core/source/core/CodalUtil.cpp
 ../codal-core/source/core/MemberFunctionCallback.cpp
-)
-
-set(CODAL_CORE_NOSRC
 ../codal-core/source/driver-models/AbstractButton.cpp
 ../codal-core/source/driver-models/Accelerometer.cpp
 ../codal-core/source/driver-models/CodalUSB.cpp
@@ -71,6 +68,9 @@ set(CODAL_CORE_NOSRC
 ../codal-core/source/types/Matrix4.cpp
 ../codal-core/source/types/RefCounted.cpp
 ../codal-core/source/types/RefCountedInit.cpp
+)
+
+set(CODAL_CORE_NOSRC
 )
 
 target_sources(app PRIVATE src/main.c ${CODAL_CORE_SRC})

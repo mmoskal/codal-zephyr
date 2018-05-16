@@ -13,4 +13,7 @@
 #define DEVICE_STACK_BASE __kernel_ram_end
 #define DEVICE_STACK_SIZE 0
 
+#define DEVICE_COMPONENT_COUNT 64
+
+
 #endif
