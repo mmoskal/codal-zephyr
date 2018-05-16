@@ -5,6 +5,7 @@ project(NONE)
 
 target_include_directories(app PRIVATE
 inc
+..
 ../codal-core/inc/core
 ../codal-core/inc/driver-models
 ../codal-core/inc/drivers
@@ -79,5 +80,6 @@ set(CODAL_CORE_NOSRC
 target_sources(app PRIVATE 
 	src/main.cpp 
 	src/zfiber.cpp 
+	src/ZTimer.cpp 
 	src/codal_target_hal.cpp 
 	${CODAL_CORE_SRC})

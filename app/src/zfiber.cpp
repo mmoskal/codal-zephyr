@@ -2,6 +2,8 @@
 
 using namespace codal;
 
+static EventModel *messageBus = NULL;
+
 void codal::schedule()
 {
     k_yield();
@@ -16,6 +18,16 @@ void codal::scheduler_init(EventModel &_messageBus)
 {
     // switch to cooperative mode
     k_thread_priority_set(k_current_get(), FIBER_PRIORITY);
+
+    messageBus = &_messageBus;
+
+    if (messageBus)
+    {
+        messageBus->listen(DEVICE_ID_NOTIFY, DEVICE_EVT_ANY, scheduler_event,
+                           MESSAGE_BUS_LISTENER_IMMEDIATE);
+        messageBus->listen(DEVICE_ID_NOTIFY_ONE, DEVICE_EVT_ANY, scheduler_event,
+                           MESSAGE_BUS_LISTENER_IMMEDIATE);
+    }
 }
 
 void codal::launch_new_fiber_param(void (*ep)(void *), void (*cp)(void *), void *pm)
@@ -90,4 +102,88 @@ int codal::invoke(void (*entry_fn)(void *), void *param)
 int codal::invoke(void (*entry_fn)(void))
 {
     return invoke((void (*)(void *))entry_fn, NULL);
+}
+
+struct EventAlert
+{
+    EventAlert *next;
+    k_sem sem;
+    u16_t id;
+    u16_t value;
+};
+
+static EventAlert *alerts;
+
+static void activate(EventAlert *prev, EventAlert *p)
+{
+    k_sem_give(&p->sem);
+    if (prev)
+        prev->next = p->next;
+    else
+        alerts = p->next;
+    delete p;
+}
+
+void codal::scheduler_event(Event evt)
+{
+    EventAlert *next, *prev = NULL;
+    int notifyOneComplete = 0;
+
+    int key = irq_lock();
+
+    for (auto p = alerts; p; p = next)
+    {
+        next = p->next;
+
+        if ((evt.source == DEVICE_ID_NOTIFY_ONE && p->id == DEVICE_ID_NOTIFY) &&
+            (p->value == DEVICE_EVT_ANY || p->value == evt.value))
+        {
+            if (!notifyOneComplete)
+            {
+                notifyOneComplete = 1;
+                activate(prev, p);
+            }
+            else
+            {
+                prev = p;
+            }
+        }
+        else if ((p->id == DEVICE_ID_ANY || p->id == evt.source) &&
+                 (p->value == DEVICE_EVT_ANY || p->value == evt.value))
+        {
+            activate(prev, p);
+        }
+        else
+        {
+            prev = p;
+        }
+    }
+
+    // Unregister this event, as we've woken up all the fibers with this match.
+    if (evt.source != DEVICE_ID_NOTIFY && evt.source != DEVICE_ID_NOTIFY_ONE)
+        messageBus->ignore(evt.source, evt.value, scheduler_event);
+
+    irq_unlock(key);
+}
+
+void codal::fiber_sleep(unsigned long t)
+{
+    k_sleep(t);
+}
+
+int codal::fiber_wait_for_event(uint16_t id, uint16_t value)
+{
+    auto e = new EventAlert();
+    e->id = id;
+    e->value = value;
+    k_sem_init(&e->sem, 0, 1);
+
+    int key = irq_lock();
+    e->next = alerts;
+    alerts = e;
+    irq_unlock(key);
+
+    k_sem_take(&e->sem, K_FOREVER);
+
+    return DEVICE_OK;
 }
