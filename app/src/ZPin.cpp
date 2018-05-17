@@ -28,14 +28,13 @@ DEALINGS IN THE SOFTWARE.
  *
  * Commonly represents an I/O pin on the edge connector.
  */
-#include "MbedPin.h"
+#include "ZPin.h"
 #include "Button.h"
 #include "Timer.h"
-#include "MbedTimedInterruptIn.h"
-#include "DynamicPwm.h"
-#include "ErrorNo.h"
 #include "codal-core/inc/types/Event.h"
-#include "mbed.h"
+
+#define IO_STATUS_CAN_READ                                                                         \
+    (IO_STATUS_DIGITAL_IN | IO_STATUS_EVENT_ON_EDGE | IO_STATUS_EVENT_PULSE_ON_EDGE)
 
 #if CONFIG_SOC_FAMILY_STM32
 #define PORTPINS 16
@@ -94,48 +93,27 @@ ZPin::ZPin(int id, PinNumber name, PinCapability capability) : codal::Pin(id, na
     CODAL_ASSERT(portNo < NUM_PORTS);
     this->port = device_get_binding(portNames[portNo]);
     CODAL_ASSERT(this->port);
+
+    this->pwm = NULL;
+    this->pwm_pulse = 0;
+    this->pwm_period = 20000; // 20ms
 }
 
-void ZPin::config()
+void ZPin::config(int status)
 {
     int flags = 0;
 
-    if (status & IO_STATUS_DIGITAL_OUT)
-        flags |= 
-    
-    gpio_pin_configure(this->port, this->name & PINMASK, )
-}
-
-/**
- * Disconnect any attached mBed IO from this pin.
- *
- * Used only when pin changes mode (i.e. Input/Output/Analog/Digital)
- */
-void ZPin::disconnect()
-{
-    /*
-    if (status & IO_STATUS_DIGITAL_IN)
-        delete ((DigitalIn *)pin);
+    this->status = status;
 
     if (status & IO_STATUS_DIGITAL_OUT)
-        delete ((DigitalOut *)pin);
+        flags |= GPIO_DIR_OUT;
+    else if (status & IO_STATUS_DIGITAL_IN)
+        flags |= GPIO_DIR_IN;
 
-    if (status & IO_STATUS_ANALOG_IN)
-        delete ((AnalogIn *)pin);
+    if (status & IO_STATUS_CAN_READ)
+        flags |= map(this->pullMode);
 
-    if (status & IO_STATUS_ANALOG_OUT)
-    {
-        ((DynamicPwm *)pin)->release();
-        delete ((DynamicPwm *)pin);
-    }
-
-    if (status & IO_STATUS_TOUCH_IN)
-        delete ((Button *)pin);
-
-    if ((status & IO_STATUS_EVENT_ON_EDGE) || (status & IO_STATUS_EVENT_PULSE_ON_EDGE))
-        delete ((TimedInterruptIn *)pin);
-    */
-    this->status = 0;
+    gpio_pin_configure(this->port, this->name & PINMASK, flags);
 }
 
 /**
@@ -164,15 +142,10 @@ int ZPin::setDigitalValue(int value)
     // Move into a Digital input state if necessary.
     if (!(status & IO_STATUS_DIGITAL_OUT))
     {
-        disconnect();
-        pin = new DigitalOut((PinName)name);
-        status |= IO_STATUS_DIGITAL_OUT;
+        config(IO_STATUS_DIGITAL_OUT);
     }
 
-    // Write the value.
-    ((DigitalOut *)pin)->write(value);
-
-    return DEVICE_OK;
+    return gpio_pin_write(port, name & PINMASK, value);
 }
 
 /**
@@ -194,18 +167,15 @@ int ZPin::getDigitalValue()
         return DEVICE_NOT_SUPPORTED;
 
     // Move into a Digital input state if necessary.
-    if (!(status &
-          (IO_STATUS_DIGITAL_IN | IO_STATUS_EVENT_ON_EDGE | IO_STATUS_EVENT_PULSE_ON_EDGE)))
+    if (!(status & IO_STATUS_CAN_READ))
     {
-        disconnect();
-        pin = new DigitalIn((PinName)name, map(pullMode));
-        status |= IO_STATUS_DIGITAL_IN;
+        config(IO_STATUS_DIGITAL_IN);
     }
 
-    if (status & (IO_STATUS_EVENT_ON_EDGE | IO_STATUS_EVENT_PULSE_ON_EDGE))
-        return ((TimedInterruptIn *)pin)->read();
+    u32_t v = 0;
+    gpio_pin_read(port, name & PINMASK, &v);
 
-    return ((DigitalIn *)pin)->read();
+    return v;
 }
 
 /**
@@ -228,18 +198,40 @@ int ZPin::getDigitalValue(PullMode pull)
     return getDigitalValue();
 }
 
+extern "C" int pinmux_setup_pwm(int pin, struct device **dev, int *channel);
+
 int ZPin::obtainAnalogChannel()
 {
-    // Move into an analogue input state if necessary, if we are no longer the focus of a DynamicPWM
-    // instance, allocate ourselves again!
-    if (!(status & IO_STATUS_ANALOG_OUT) || !(((DynamicPwm *)pin)->getPinName() == name))
+    // Move into an analogue input state if necessary
+    if (!(status & IO_STATUS_ANALOG_OUT))
     {
-        disconnect();
-        pin = new DynamicPwm((PinName)name);
-        status |= IO_STATUS_ANALOG_OUT;
+        int chan;
+        if (pinmux_setup_pwm(this->name, &this->pwm, &chan))
+            return DEVICE_INVALID_PARAMETER;
+        this->pwm_channel = chan;
+        status = IO_STATUS_ANALOG_OUT;
     }
 
     return DEVICE_OK;
+}
+
+int ZPin::setPWM(u32_t value, u32_t period)
+{
+    // check if this pin has an analogue mode...
+    if (!(PIN_CAPABILITY_DIGITAL & capability))
+        return DEVICE_NOT_SUPPORTED;
+
+    // sanitise the level value
+    if (value > period)
+        value = period;
+
+    if (obtainAnalogChannel())
+        return DEVICE_INVALID_PARAMETER;
+
+    this->pwm_pulse = value;
+    this->pwm_period = period;
+
+    return pwm_pin_set_usec(this->pwm, this->pwm_channel, this->pwm_period, this->pwm_pulse);
 }
 
 /**
@@ -252,21 +244,11 @@ int ZPin::obtainAnalogChannel()
  */
 int ZPin::setAnalogValue(int value)
 {
-    // check if this pin has an analogue mode...
-    if (!(PIN_CAPABILITY_DIGITAL & capability))
-        return DEVICE_NOT_SUPPORTED;
-
     // sanitise the level value
     if (value < 0 || value > DEVICE_PIN_MAX_OUTPUT)
         return DEVICE_INVALID_PARAMETER;
 
-    float level = (float)value / float(DEVICE_PIN_MAX_OUTPUT);
-
-    // obtain use of the DynamicPwm instance, if it has changed / configure if we do not have one
-    if (obtainAnalogChannel() == DEVICE_OK)
-        return ((DynamicPwm *)pin)->write(level);
-
-    return DEVICE_OK;
+    return setPWM((u64_t)value * this->pwm_period / DEVICE_PIN_MAX_OUTPUT, this->pwm_period);
 }
 
 /**
@@ -329,19 +311,8 @@ int ZPin::setServoValue(int value, int range, int center)
 int ZPin::getAnalogValue()
 {
     // check if this pin has an analogue mode...
-    if (!(PIN_CAPABILITY_ANALOG & capability))
-        return DEVICE_NOT_SUPPORTED;
-
-    // Move into an analogue input state if necessary.
-    if (!(status & IO_STATUS_ANALOG_IN))
-    {
-        disconnect();
-        pin = new AnalogIn((PinName)name);
-        status |= IO_STATUS_ANALOG_IN;
-    }
-
-    // perform a read!
-    return (((AnalogIn *)pin)->read_u16() >> 2);
+    //    if (!(PIN_CAPABILITY_ANALOG & capability))
+    return DEVICE_NOT_SUPPORTED;
 }
 
 /**
@@ -409,18 +380,20 @@ int ZPin::isAnalog()
 int ZPin::isTouched()
 {
     // check if this pin has a touch mode...
-    if (!(PIN_CAPABILITY_DIGITAL & capability))
-        return DEVICE_NOT_SUPPORTED;
+    //    if (!(PIN_CAPABILITY_DIGITAL & capability))
+    return DEVICE_NOT_SUPPORTED;
 
-    // Move into a touch input state if necessary.
-    if (!(status & IO_STATUS_TOUCH_IN))
-    {
-        disconnect();
-        pin = new Button(*this, id);
-        status |= IO_STATUS_TOUCH_IN;
-    }
+    /*
+        // Move into a touch input state if necessary.
+        if (!(status & IO_STATUS_TOUCH_IN))
+        {
+            disconnect();
+            pin = new Button(*this, id);
+            status |= IO_STATUS_TOUCH_IN;
+        }
 
-    return ((Button *)pin)->isPressed();
+        return ((Button *)pin)->isPressed();
+    */
 }
 
 /**
@@ -441,18 +414,8 @@ int ZPin::setServoPulseUs(int pulseWidth)
     // sanitise the pulse width
     if (pulseWidth < 0)
         return DEVICE_INVALID_PARAMETER;
-
-    // Check we still have the control over the DynamicPwm instance
-    if (obtainAnalogChannel() == DEVICE_OK)
-    {
-        // check if the period is set to 20ms
-        if (((DynamicPwm *)pin)->getPeriodUs() != DEVICE_DEFAULT_PWM_PERIOD)
-            ((DynamicPwm *)pin)->setPeriodUs(DEVICE_DEFAULT_PWM_PERIOD);
-
-        ((DynamicPwm *)pin)->pulsewidth_us(pulseWidth);
-    }
-
-    return DEVICE_OK;
+    
+    return setPWM(pulseWidth, DEVICE_DEFAULT_PWM_PERIOD);
 }
 
 /**
@@ -464,17 +427,7 @@ int ZPin::setServoPulseUs(int pulseWidth)
  */
 int ZPin::setAnalogPeriodUs(int period)
 {
-    int ret;
-
-    if (!(status & IO_STATUS_ANALOG_OUT))
-    {
-        // Drop this pin into PWM mode, but with a LOW value.
-        ret = setAnalogValue(0);
-        if (ret != DEVICE_OK)
-            return ret;
-    }
-
-    return ((DynamicPwm *)pin)->setPeriodUs(period);
+    return setPWM((u64_t)this->pwm_pulse * period / this->pwm_period, period);
 }
 
 /**
@@ -501,7 +454,7 @@ uint32_t ZPin::getAnalogPeriodUs()
     if (!(status & IO_STATUS_ANALOG_OUT))
         return DEVICE_NOT_SUPPORTED;
 
-    return ((DynamicPwm *)pin)->getPeriodUs();
+    return this->pwm_period;
 }
 
 /**
@@ -527,17 +480,8 @@ int ZPin::setPull(PullMode pull)
 {
     pullMode = pull;
 
-    if ((status & IO_STATUS_DIGITAL_IN))
-    {
-        ((DigitalIn *)pin)->mode(map(pull));
-        return DEVICE_OK;
-    }
-
-    if ((status & IO_STATUS_EVENT_ON_EDGE) || (status & IO_STATUS_EVENT_PULSE_ON_EDGE))
-    {
-        ((TimedInterruptIn *)pin)->mode(map(pull));
-        return DEVICE_OK;
-    }
+    if (status & IO_STATUS_CAN_READ)
+        config(status);
 
     return DEVICE_NOT_SUPPORTED;
 }
@@ -629,7 +573,7 @@ int ZPin::enableRiseFallEvents(int eventType)
 int ZPin::disableEvents()
 {
     if (status & (IO_STATUS_EVENT_ON_EDGE | IO_STATUS_EVENT_PULSE_ON_EDGE | IO_STATUS_TOUCH_IN))
-        disconnect();
+        config(0);
 
     return DEVICE_OK;
 }
@@ -691,4 +635,4 @@ int ZPin::eventOn(int eventType)
 
     return DEVICE_OK;
 }
-}
+} // namespace codal
