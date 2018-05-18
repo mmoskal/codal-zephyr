@@ -31,7 +31,9 @@ DEALINGS IN THE SOFTWARE.
 #include "ZPin.h"
 #include "Button.h"
 #include "Timer.h"
+#include "codal_target_hal.h"
 #include "codal-core/inc/types/Event.h"
+#include "pwm.h"
 
 #define IO_STATUS_CAN_READ                                                                         \
     (IO_STATUS_DIGITAL_IN | IO_STATUS_EVENT_ON_EDGE | IO_STATUS_EVENT_PULSE_ON_EDGE)
@@ -46,12 +48,15 @@ static const char *portNames[] = {
 #error "SOC family for pin not defined"
 #endif
 
-#define PORTPINMASK (PORTPINS - 1)
+#define PINMASK (PORTPINS - 1)
 
+
+namespace codal
+{
+    
 struct ZPwmConfig
 {
     struct device *pwm;
-    CODAL_TIMESTAMP prevPulse;
     u32_t period;
     u32_t pulse;
     uint8_t channel;
@@ -60,11 +65,9 @@ struct ZPwmConfig
 struct ZEventConfig
 {
     struct gpio_callback callback;
+    CODAL_TIMESTAMP prevPulse;
     ZPin *parent;
 };
-
-namespace codal
-{
 
 inline int map(codal::PullMode pinMode)
 {
@@ -104,7 +107,7 @@ ZPin::ZPin(int id, PinNumber name, PinCapability capability) : codal::Pin(id, na
     // Power up in a disconnected, low power state.
     // If we're unused, this is how it will stay...
     this->status = 0x00;
-    int portNo = (int)name / PORTPINS;
+    unsigned portNo = (unsigned)name / PORTPINS;
     CODAL_ASSERT(portNo < NUM_PORTS);
     this->port = device_get_binding(portNames[portNo]);
     CODAL_ASSERT(this->port);
@@ -236,7 +239,7 @@ int ZPin::obtainAnalogChannel()
     {
         this->config(0);
         auto cfg = this->pwmCfg = new ZPwmConfig;
-        cfg->period = 20000; // 20ms
+        cfg->period = DEVICE_DEFAULT_PWM_PERIOD; // 20ms
         cfg->pulse = 0;      // 0%
         int chan;
         if (pinmux_setup_pwm(this->name, &cfg->pwm, &chan))
@@ -270,7 +273,7 @@ int ZPin::setPWM(u32_t value, u32_t period)
     cfg->pulse = value;
     cfg->period = period;
 
-    return pwmCfg->pin_set_usec(cfg->pwm, cfg->channel, cfg->period, cfg->pulse);
+    return pwm_pin_set_usec(cfg->pwm, cfg->channel, cfg->period, cfg->pulse);
 }
 
 /**

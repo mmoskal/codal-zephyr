@@ -29,6 +29,10 @@ DEALINGS IN THE SOFTWARE.
 #include "Pin.h"
 #include "CodalConfig.h"
 
+#ifndef DEVICE_DEFAULT_PWM_PERIOD
+#define DEVICE_DEFAULT_PWM_PERIOD 20000
+#endif
+
 /**
  * Class definition for Pin.
  *
@@ -48,6 +52,10 @@ protected:
         ZPwmConfig *pwmCfg;
         ZEventConfig *evCfg;
     };
+
+    void config(int status);
+    int setPWM(u32_t value, u32_t period);
+    static void eventCallback(struct device *port, struct gpio_callback *cb, u32_t pins);
 
     /**
      * Disconnect any attached mBed IO from this pin.
@@ -116,7 +124,7 @@ public:
      * DevicePin P0(DEVICE_ID_IO_P0, DEVICE_PIN_P0, PIN_CAPABILITY_ALL);
      * @endcode
      */
-    Pin(int id, PinNumber name, PinCapability capability);
+    ZPin(int id, PinNumber name, PinCapability capability);
 
     /**
      * Configures this IO pin as a digital output (if necessary) and sets the pin to 'value'.
