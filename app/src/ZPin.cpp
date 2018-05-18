@@ -50,10 +50,9 @@ static const char *portNames[] = {
 
 #define PINMASK (PORTPINS - 1)
 
-
 namespace codal
 {
-    
+
 struct ZPwmConfig
 {
     struct device *pwm;
@@ -122,7 +121,7 @@ void ZPin::config(int status)
 
     if (this->status & IO_STATUS_ANALOG_OUT)
     {
-        free(this->pwmCfg);
+        delete this->pwmCfg;
         this->pwmCfg = NULL;
     }
 
@@ -131,9 +130,15 @@ void ZPin::config(int status)
         CODAL_ASSERT(this->evCfg->parent == this);
         gpio_pin_disable_callback(this->port, pin);
         gpio_remove_callback(this->port, &this->evCfg->callback);
-        free(this->evCfg);
+        delete this->evCfg;
         this->evCfg = NULL;
-    };
+    }
+
+    if (this->status & IO_STATUS_TOUCH_IN)
+    {
+        delete this->btn;
+        this->btn = NULL;
+    }
 
     this->status = status;
 
@@ -240,11 +245,12 @@ int ZPin::obtainAnalogChannel()
         this->config(0);
         auto cfg = this->pwmCfg = new ZPwmConfig;
         cfg->period = DEVICE_DEFAULT_PWM_PERIOD; // 20ms
-        cfg->pulse = 0;      // 0%
+        cfg->pulse = 0;                          // 0%
         int chan;
         if (pinmux_setup_pwm(this->name, &cfg->pwm, &chan))
             return DEVICE_INVALID_PARAMETER;
-        if (chan < 0) {
+        if (chan < 0)
+        {
             chan = -chan;
             // TODO what to do about inverted channels?
         }
@@ -423,20 +429,18 @@ int ZPin::isAnalog()
 int ZPin::isTouched()
 {
     // check if this pin has a touch mode...
-    //    if (!(PIN_CAPABILITY_DIGITAL & capability))
-    return DEVICE_NOT_SUPPORTED;
+    if (!(PIN_CAPABILITY_DIGITAL & capability))
+        return DEVICE_NOT_SUPPORTED;
 
-    /*
-        // Move into a touch input state if necessary.
-        if (!(status & IO_STATUS_TOUCH_IN))
-        {
-            disconnect();
-            pin = new Button(*this, id);
-            status |= IO_STATUS_TOUCH_IN;
-        }
+    // Move into a touch input state if necessary.
+    if (!(status & IO_STATUS_TOUCH_IN))
+    {
+        config(0);
+        this->btn = new Button(*this, id);
+        status |= IO_STATUS_TOUCH_IN;
+    }
 
-        return ((Button *)pin)->isPressed();
-    */
+    return this->btn->isPressed();
 }
 
 /**
@@ -580,6 +584,8 @@ void ZPin::eventCallback(struct device *port, struct gpio_callback *cb, u32_t pi
     auto cfg = CONTAINER_OF(cb, ZEventConfig, callback);
     auto pin = cfg->parent;
     u32_t v = 0;
+    // this is somewhat suboptimal, since the state of the pin might have changed
+    // since the event was rised
     gpio_pin_read(pin->port, pin->name & PINMASK, &v);
     if (v)
         pin->onRise();

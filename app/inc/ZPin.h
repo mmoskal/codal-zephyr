@@ -28,6 +28,7 @@ DEALINGS IN THE SOFTWARE.
 
 #include "Pin.h"
 #include "CodalConfig.h"
+#include "Button.h"
 
 #ifndef DEVICE_DEFAULT_PWM_PERIOD
 #define DEVICE_DEFAULT_PWM_PERIOD 20000
@@ -51,6 +52,7 @@ protected:
     union {
         ZPwmConfig *pwmCfg;
         ZEventConfig *evCfg;
+        Button *btn;
     };
 
     void config(int status);
