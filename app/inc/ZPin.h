@@ -36,14 +36,18 @@ DEALINGS IN THE SOFTWARE.
  */
 namespace codal
 {
+
+struct ZPwmConfig;
+struct ZEventConfig;
+
 class ZPin : public codal::Pin
 {
 protected:
     struct device *port;
-    struct device *pwm;
-    u32_t pwm_period;
-    u32_t pwm_pulse;
-    uint8_t pwm_channel;
+    union {
+        ZPwmConfig *pwmCfg;
+        ZEventConfig *evCfg;
+    };
 
     /**
      * Disconnect any attached mBed IO from this pin.
@@ -354,6 +358,6 @@ public:
      */
     virtual int eventOn(int eventType);
 };
-}
+} // namespace codal
 
 #endif

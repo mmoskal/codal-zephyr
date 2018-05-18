@@ -48,6 +48,21 @@ static const char *portNames[] = {
 
 #define PORTPINMASK (PORTPINS - 1)
 
+struct ZPwmConfig
+{
+    struct device *pwm;
+    CODAL_TIMESTAMP prevPulse;
+    u32_t period;
+    u32_t pulse;
+    uint8_t channel;
+};
+
+struct ZEventConfig
+{
+    struct gpio_callback callback;
+    ZPin *parent;
+};
+
 namespace codal
 {
 
@@ -94,14 +109,28 @@ ZPin::ZPin(int id, PinNumber name, PinCapability capability) : codal::Pin(id, na
     this->port = device_get_binding(portNames[portNo]);
     CODAL_ASSERT(this->port);
 
-    this->pwm = NULL;
-    this->pwm_pulse = 0;
-    this->pwm_period = 20000; // 20ms
+    this->pwmCfg = NULL;
 }
 
 void ZPin::config(int status)
 {
     int flags = 0;
+    int pin = this->name & PINMASK;
+
+    if (this->status & IO_STATUS_ANALOG_OUT)
+    {
+        free(this->pwmCfg);
+        this->pwmCfg = NULL;
+    }
+
+    if (this->status & (IO_STATUS_EVENT_ON_EDGE | IO_STATUS_EVENT_PULSE_ON_EDGE))
+    {
+        CODAL_ASSERT(this->evCfg->parent == this);
+        gpio_pin_disable_callback(this->port, pin);
+        gpio_remove_callback(this->port, &this->evCfg->callback);
+        free(this->evCfg);
+        this->evCfg = NULL;
+    };
 
     this->status = status;
 
@@ -113,7 +142,7 @@ void ZPin::config(int status)
     if (status & IO_STATUS_CAN_READ)
         flags |= map(this->pullMode);
 
-    gpio_pin_configure(this->port, this->name & PINMASK, flags);
+    gpio_pin_configure(this->port, pin, flags);
 }
 
 /**
@@ -202,13 +231,21 @@ extern "C" int pinmux_setup_pwm(int pin, struct device **dev, int *channel);
 
 int ZPin::obtainAnalogChannel()
 {
-    // Move into an analogue input state if necessary
+    // Move into an analogue output state if necessary
     if (!(status & IO_STATUS_ANALOG_OUT))
     {
+        this->config(0);
+        auto cfg = this->pwmCfg = new ZPwmConfig;
+        cfg->period = 20000; // 20ms
+        cfg->pulse = 0;      // 0%
         int chan;
-        if (pinmux_setup_pwm(this->name, &this->pwm, &chan))
+        if (pinmux_setup_pwm(this->name, &cfg->pwm, &chan))
             return DEVICE_INVALID_PARAMETER;
-        this->pwm_channel = chan;
+        if (chan < 0) {
+            chan = -chan;
+            // TODO what to do about inverted channels?
+        }
+        cfg->channel = chan;
         status = IO_STATUS_ANALOG_OUT;
     }
 
@@ -228,10 +265,12 @@ int ZPin::setPWM(u32_t value, u32_t period)
     if (obtainAnalogChannel())
         return DEVICE_INVALID_PARAMETER;
 
-    this->pwm_pulse = value;
-    this->pwm_period = period;
+    auto cfg = this->pwmCfg;
 
-    return pwm_pin_set_usec(this->pwm, this->pwm_channel, this->pwm_period, this->pwm_pulse);
+    cfg->pulse = value;
+    cfg->period = period;
+
+    return pwmCfg->pin_set_usec(cfg->pwm, cfg->channel, cfg->period, cfg->pulse);
 }
 
 /**
@@ -248,7 +287,8 @@ int ZPin::setAnalogValue(int value)
     if (value < 0 || value > DEVICE_PIN_MAX_OUTPUT)
         return DEVICE_INVALID_PARAMETER;
 
-    return setPWM((u64_t)value * this->pwm_period / DEVICE_PIN_MAX_OUTPUT, this->pwm_period);
+    return setPWM((u64_t)value * this->pwmCfg->period / DEVICE_PIN_MAX_OUTPUT,
+                  this->pwmCfg->period);
 }
 
 /**
@@ -414,7 +454,7 @@ int ZPin::setServoPulseUs(int pulseWidth)
     // sanitise the pulse width
     if (pulseWidth < 0)
         return DEVICE_INVALID_PARAMETER;
-    
+
     return setPWM(pulseWidth, DEVICE_DEFAULT_PWM_PERIOD);
 }
 
@@ -427,7 +467,8 @@ int ZPin::setServoPulseUs(int pulseWidth)
  */
 int ZPin::setAnalogPeriodUs(int period)
 {
-    return setPWM((u64_t)this->pwm_pulse * period / this->pwm_period, period);
+    // keep the % of duty cycle
+    return setPWM((u64_t)this->pwmCfg->pulse * period / this->pwmCfg->period, period);
 }
 
 /**
@@ -454,7 +495,7 @@ uint32_t ZPin::getAnalogPeriodUs()
     if (!(status & IO_STATUS_ANALOG_OUT))
         return DEVICE_NOT_SUPPORTED;
 
-    return this->pwm_period;
+    return this->pwmCfg->period;
 }
 
 /**
@@ -495,8 +536,8 @@ int ZPin::setPull(PullMode pull)
 void ZPin::pulseWidthEvent(int eventValue)
 {
     Event evt(id, eventValue, CREATE_ONLY);
-    uint64_t now = evt.timestamp;
-    uint64_t previous = ((TimedInterruptIn *)pin)->getTimestamp();
+    auto now = evt.timestamp;
+    auto previous = this->evCfg->prevPulse;
 
     if (previous != 0)
     {
@@ -504,7 +545,7 @@ void ZPin::pulseWidthEvent(int eventValue)
         evt.fire();
     }
 
-    ((TimedInterruptIn *)pin)->setTimestamp(now);
+    this->evCfg->prevPulse = now;
 }
 
 /**
@@ -531,6 +572,18 @@ void ZPin::onFall()
         Event(id, DEVICE_PIN_EVT_FALL);
 }
 
+void ZPin::eventCallback(struct device *port, struct gpio_callback *cb, u32_t pins)
+{
+    auto cfg = CONTAINER_OF(cb, ZEventConfig, callback);
+    auto pin = cfg->parent;
+    u32_t v = 0;
+    gpio_pin_read(pin->port, pin->name & PINMASK, &v);
+    if (v)
+        pin->onRise();
+    else
+        pin->onFall();
+}
+
 /**
  * This member function will construct an TimedInterruptIn instance, and configure
  * interrupts for rise and fall.
@@ -545,12 +598,13 @@ int ZPin::enableRiseFallEvents(int eventType)
     // if we are in neither of the two modes, configure pin as a TimedInterruptIn.
     if (!(status & (IO_STATUS_EVENT_ON_EDGE | IO_STATUS_EVENT_PULSE_ON_EDGE)))
     {
-        disconnect();
-        pin = new TimedInterruptIn((PinName)name);
-
-        ((TimedInterruptIn *)pin)->mode(map(pullMode));
-        ((TimedInterruptIn *)pin)->rise(callback(this, &ZPin::onRise));
-        ((TimedInterruptIn *)pin)->fall(callback(this, &ZPin::onFall));
+        config(0);
+        auto cfg = this->evCfg = new ZEventConfig;
+        cfg->parent = this;
+        auto pin = this->name & PINMASK;
+        gpio_init_callback(&cfg->callback, &ZPin::eventCallback, BIT(pin));
+        gpio_add_callback(this->port, &cfg->callback);
+        gpio_pin_enable_callback(this->port, pin);
     }
 
     status &= ~(IO_STATUS_EVENT_ON_EDGE | IO_STATUS_EVENT_PULSE_ON_EDGE);
