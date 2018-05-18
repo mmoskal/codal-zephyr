@@ -6,6 +6,8 @@
 
 #include <pinmux/stm32/pinmux_stm32.h>
 
+#include "stm32f4xx_hal.h"
+
 #define LINE_PWM 0
 #define LINE_SDA 1
 #define LINE_SCL 2
@@ -40,8 +42,8 @@ typedef enum
     PIN_CFG_EXT(pin, periph, line, mode, pull, af, 0, 0)
 
 #define PIN_CFG_EXT(pin, periph, line, mode, pull, af, chan, inv)                                  \
-    { { STM32_PIN_ ## pin,  ((mode) << STM32_MODER_SHIFT) | ((pull) << STM32_PUPDR_SHIFT) | af) }, \
-        #periph, LINE_ ## line, ch, inv                                                            \
+    { { STM32_PIN_ ## pin,  ((mode) << STM32_MODER_SHIFT) | ((pull) << STM32_PUPDR_SHIFT) | (af) }, \
+        #periph, LINE_ ## line, chan, inv                                                            \
     }
 
 struct ext_pin_config
@@ -53,6 +55,7 @@ struct ext_pin_config
     u8_t inverted;
 };
 
+#undef ADC
 #define ADC(pin, ch) PIN_CFG_EXT(pin, ADC1, ADC, STM_MODE_ANALOG, GPIO_NOPULL, 0, ch, 0)
 
 #define PWM(pin, pwm, af, ch, inv)                                                                 \
@@ -183,17 +186,17 @@ const struct ext_pin_config pins[] = {
 
 static int pinmux_setup(int pin, struct device **dev, int *channel, int line)
 {
-    for (struct ext_pin_config *p = pins; p->device_name; p++)
-        if (p->cfg.pin == pin && p->line == line)
+    for (const struct ext_pin_config *p = pins; p->device_name; p++)
+        if (p->cfg.pin_num == pin && p->line == line)
         {
-            struct device *curr = device_get_binding(c->device_name);
+            struct device *curr = device_get_binding(p->device_name);
             if (!curr)
                 return -EINVAL;
             if (*dev && *dev != curr)
                 return -EINVAL;
             *dev = curr;
             if (channel)
-                *channel = c->inverted ? -c->channel : c->channel;
+                *channel = p->inverted ? -p->channel : p->channel;
             stm32_setup_pins(&p->cfg, 1);
             return 0;
         }
