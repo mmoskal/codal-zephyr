@@ -29,6 +29,11 @@ DEALINGS IN THE SOFTWARE.
 #include "zephyr/include/spi.h"
 #include "codal-core/inc/driver-models/SPI.h"
 #include "Pin.h"
+#include "dma.h"
+
+#ifdef CONFIG_SOC_SERIES_STM32F4X
+#define ZSPI_DMA_SUPPORTED 1
+#endif
 
 namespace codal
 {
@@ -39,6 +44,15 @@ namespace codal
 class ZSPI : public codal::SPI
 {
 protected:
+#ifdef ZSPI_DMA_SUPPORTED
+    struct dma_config dma_cfg;
+    struct dma_block_config dma_block_cfg;
+    struct device *dma;
+    unsigned dma_chan_id;
+    struct k_sem dma_done;
+
+    static void dma_callback(struct device *dev, u32_t id, int error_code);
+#endif
 
     struct spi_config config;
     struct device *dev;
@@ -47,7 +61,6 @@ protected:
     struct spi_buf_set txBufSet;
     struct spi_buf txBuf;
     uint8_t rxCh, txCh;
-
 public:
     /**
      * Initialize SPI instance with given pins.
@@ -96,6 +109,6 @@ public:
     virtual int transfer(const uint8_t *txBuffer, uint32_t txSize, uint8_t *rxBuffer,
                          uint32_t rxSize);
 };
-}
+} // namespace codal
 
 #endif

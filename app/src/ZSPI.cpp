@@ -28,17 +28,34 @@ DEALINGS IN THE SOFTWARE.
 #include "CodalDmesg.h"
 #include "codal-core/inc/driver-models/Timer.h"
 #include "board_pinmux.h"
+#include "codal_target_hal.h"
+
+#include "logging/sys_log.h"
+
+#ifdef CONFIG_SOC_SERIES_STM32F4X
+#include "drivers/clock_control/stm32_clock_control.h"
+#include "zephyr/drivers/spi/spi_ll_stm32.h"
+#endif
 
 namespace codal
 {
+
+static ZSPI *instances[4];
 
 #define ZERO(f) memset(&f, 0, sizeof(f))
 /**
  * Constructor.
  */
-ZSPI::ZSPI(Pin &mosi, Pin &miso, Pin &sclk)
-    : codal::SPI()
+ZSPI::ZSPI(Pin &mosi, Pin &miso, Pin &sclk) : codal::SPI()
 {
+#ifdef ZSPI_DMA_SUPPORTED
+    ZERO(dma_cfg);
+    ZERO(dma_block_cfg);
+    dma = NULL;
+    dma_chan_id = 0;
+    k_sem_init(&dma_done, 0, 1);
+#endif
+
     pinmux_setup_spi((int)mosi.name, (int)miso.name, (int)sclk.name, &dev);
     ZERO(config);
     ZERO(rxBuf);
@@ -49,6 +66,12 @@ ZSPI::ZSPI(Pin &mosi, Pin &miso, Pin &sclk)
     txBufSet.count = 1;
     setFrequency(1000000);
     setMode(0, 8);
+
+    for (unsigned i = 0; i < ARRAY_SIZE(instances); ++i)
+    {
+        if (instances[i] == NULL)
+            instances[i] = this;
+    }
 }
 
 /** Set the frequency of the SPI interface
@@ -104,6 +127,18 @@ int ZSPI::write(int data)
     return rxCh;
 }
 
+void ZSPI::dma_callback(struct device *dev, u32_t id, int error_code)
+{
+    for (unsigned i = 0; i < ARRAY_SIZE(instances); ++i)
+    {
+        if (instances[i] && instances[i]->dma == dev && instances[i]->dma_chan_id == id)
+        {
+            k_sem_give(&instances[i]->dma_done);
+            break;
+        }
+    }
+}
+
 /**
  * Writes and reads from the SPI bus concurrently. Waits (possibly un-scheduled) for transfer to
  * finish.
@@ -112,12 +147,88 @@ int ZSPI::write(int data)
  */
 int ZSPI::transfer(const uint8_t *txBuffer, uint32_t txSize, uint8_t *rxBuffer, uint32_t rxSize)
 {
+#ifdef CONFIG_SOC_SERIES_STM32F4X
+    // if nothing to read, and we already did some writes, try DMA!
+    if (!rxBuffer && txBuf.buf)
+    {
+        auto spi = ((spi_stm32_config *)dev->config->config_info)->spi;
+
+        dma_cfg.channel_direction = MEMORY_TO_PERIPHERAL;
+        dma_cfg.source_data_size = 1;
+        dma_cfg.dest_data_size = 1;
+        dma_cfg.source_burst_length = 1;
+        dma_cfg.dest_burst_length = 1;
+        dma_cfg.dma_callback = ZSPI::dma_callback;
+        dma_cfg.complete_callback_en = 0; // callback at the end only
+        dma_cfg.error_callback_en = 1;    // no error callback
+        dma_cfg.block_count = 1;
+        dma_cfg.head_block = &dma_block_cfg;
+
+        dma_block_cfg.block_size = txSize;
+        dma_block_cfg.source_address = (u32_t)txBuffer;
+        dma_block_cfg.dest_address = (u32_t)&spi->DR;
+
+        if (!dma)
+        {
+            if (spi == SPI1)
+            {
+                dma = device_get_binding("DMA_2");
+                dma_chan_id = 3;
+                // chan 3
+            }
+            else if (spi == SPI2)
+            {
+                dma = device_get_binding("DMA_1");
+                dma_chan_id = 4;
+                // chan 0
+            }
+            else if (spi == SPI3)
+            {
+                dma = device_get_binding("DMA_1");
+                dma_chan_id = 5;
+                // chan 0
+            }
+            else
+            {
+                CODAL_ASSERT(0);
+            }
+        }
+
+        // dma_chan_id is reall STM32 stream
+
+        if (dma_config(dma, dma_chan_id, &dma_cfg))
+        {
+            return DEVICE_SPI_ERROR;
+        }
+
+        if (dma_start(dma, dma_chan_id))
+        {
+            return DEVICE_SPI_ERROR;
+        }
+
+        // enable SPI if not done yet
+        if (!(spi->CR1 & SPI_CR1_SPE))
+            spi->CR1 |= SPI_CR1_SPE;
+
+        // Enable the SPI Error Interrupt Bit
+        spi->CR2 |= SPI_CR2_ERRIE;
+
+        // Enable Tx DMA Request
+        spi->CR2 |= SPI_CR2_TXDMAEN;
+
+        k_sem_take(&dma_done, K_FOREVER);
+
+        return DEVICE_OK;
+    }
+#endif
     rxBuf.buf = rxBuffer;
     rxBuf.len = rxSize;
-    txBuf.buf = (uint8_t*)txBuffer;
+    txBuf.buf = (uint8_t *)txBuffer;
     txBuf.len = txSize;
-    if (spi_transceive(dev, &config,  txSize ? &txBufSet : NULL, rxSize ? &rxBufSet : NULL) < 0)
+    if (spi_transceive(dev, &config, txSize ? &txBufSet : NULL, rxSize ? &rxBufSet : NULL) < 0)
         return DEVICE_SPI_ERROR;
+    
+    return 0;
 }
 
 } // namespace codal
