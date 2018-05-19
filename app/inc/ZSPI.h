@@ -22,12 +22,11 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 */
 
-#ifndef CODAL_MBED_SPI_H
-#define CODAL_MBED_SPI_H
+#ifndef CODAL_Z_SPI_H
+#define CODAL_Z_SPI_H
 
-#include "mbed.h"
 #include "CodalConfig.h"
-#include "SPI.h"
+#include "zephyr/include/spi.h"
 #include "codal-core/inc/driver-models/SPI.h"
 #include "Pin.h"
 
@@ -37,15 +36,25 @@ namespace codal
 /**
  * Class definition for SPI service, derived from ARM mbed.
  */
-class MbedSPI : protected mbed::SPI, public codal::SPI
+class ZSPI : public codal::SPI
 {
+protected:
+
+    struct spi_config config;
+    struct device *dev;
+    struct spi_buf_set rxBufSet;
+    struct spi_buf rxBuf;
+    struct spi_buf_set txBufSet;
+    struct spi_buf txBuf;
+    uint8_t rxCh, txCh;
+
 public:
     /**
      * Initialize SPI instance with given pins.
      *
      * Default setup is 1 MHz, 8 bit, mode 0.
      */
-    MbedSPI(codal::Pin &mosi, codal::Pin &miso, codal::Pin &sclk);
+    ZSPI(codal::Pin &mosi, codal::Pin &miso, codal::Pin &sclk);
 
     /** Set the frequency of the SPI interface
      *
@@ -72,12 +81,20 @@ public:
     /**
      * Writes the given byte to the SPI bus.
      *
-     * The CPU will busy wait until the transmission is complete.
+     * The CPU will wait until the transmission is complete.
      *
      * @param data The data to write.
      * @return Response from the SPI slave or DEVICE_SPI_ERROR if the the write request failed.
      */
     virtual int write(int data);
+
+    /**
+     * Writes and reads from the SPI bus concurrently. Waits un-scheduled for transfer to finish.
+     *
+     * Either buffer can be NULL.
+     */
+    virtual int transfer(const uint8_t *txBuffer, uint32_t txSize, uint8_t *rxBuffer,
+                         uint32_t rxSize);
 };
 }
 

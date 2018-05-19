@@ -34,6 +34,7 @@ DEALINGS IN THE SOFTWARE.
 #include "codal_target_hal.h"
 #include "codal-core/inc/types/Event.h"
 #include "pwm.h"
+#include "board_pinmux.h"
 
 #define IO_STATUS_CAN_READ                                                                         \
     (IO_STATUS_DIGITAL_IN | IO_STATUS_EVENT_ON_EDGE | IO_STATUS_EVENT_PULSE_ON_EDGE)
@@ -234,8 +235,6 @@ int ZPin::getDigitalValue(PullMode pull)
     setPull(pull);
     return getDigitalValue();
 }
-
-extern "C" int pinmux_setup_pwm(int pin, struct device **dev, int *channel);
 
 int ZPin::obtainAnalogChannel()
 {

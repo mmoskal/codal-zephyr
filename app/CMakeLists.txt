@@ -82,5 +82,6 @@ target_sources(app PRIVATE
 	src/zfiber.cpp 
 	src/ZTimer.cpp 
 	src/ZPin.cpp 
+	src/ZSPI.cpp 
 	src/codal_target_hal.cpp 
 	${CODAL_CORE_SRC})

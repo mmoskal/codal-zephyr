@@ -23,20 +23,30 @@ DEALINGS IN THE SOFTWARE.
 */
 
 #include "CodalConfig.h"
-#include "MbedSPI.h"
+#include "ZSPI.h"
 #include "ErrorNo.h"
 #include "CodalDmesg.h"
 #include "codal-core/inc/driver-models/Timer.h"
+#include "board_pinmux.h"
 
 namespace codal
 {
 
+#define ZERO(f) memset(&f, 0, sizeof(f))
 /**
  * Constructor.
  */
-MbedSPI::MbedSPI(Pin &mosi, Pin &miso, Pin &sclk)
-    : mbed::SPI((PinName)mosi.name, (PinName)miso.name, (PinName)sclk.name), codal::SPI()
+ZSPI::ZSPI(Pin &mosi, Pin &miso, Pin &sclk)
+    : codal::SPI()
 {
+    pinmux_setup_spi((int)mosi.name, (int)miso.name, (int)sclk.name, &dev);
+    ZERO(config);
+    ZERO(rxBuf);
+    ZERO(txBuf);
+    rxBufSet.buffers = &rxBuf;
+    rxBufSet.count = 1;
+    txBufSet.buffers = &txBuf;
+    txBufSet.count = 1;
     setFrequency(1000000);
     setMode(0, 8);
 }
@@ -45,9 +55,9 @@ MbedSPI::MbedSPI(Pin &mosi, Pin &miso, Pin &sclk)
  *
  * @param frequency The bus frequency in hertz
  */
-int MbedSPI::setFrequency(uint32_t frequency)
+int ZSPI::setFrequency(uint32_t frequency)
 {
-    mbed::SPI::frequency(frequency);
+    config.frequency = frequency;
     return DEVICE_OK;
 }
 
@@ -65,25 +75,49 @@ int MbedSPI::setFrequency(uint32_t frequency)
  *   3  |  1   1
  * @endcode
  */
-int MbedSPI::setMode(int mode, int bits)
+int ZSPI::setMode(int mode, int bits)
 {
-    mbed::SPI::format(bits, mode);
+    config.operation = SPI_OP_MODE_MASTER | SPI_TRANSFER_MSB | SPI_WORD_SET(8) | SPI_LINES_SINGLE;
+
+    if (mode & 1)
+        config.operation |= SPI_MODE_CPHA;
+    if (mode & 2)
+        config.operation |= SPI_MODE_CPOL;
+
     return DEVICE_OK;
 }
 
 /**
  * Writes the given byte to the SPI bus.
  *
- * The CPU will busy wait until the transmission is complete.
+ * The CPU will wait until the transmission is complete.
  *
  * @param data The data to write.
  * @return Response from the SPI slave or DEVICE_SPI_ERROR if the the write request failed.
  */
-int MbedSPI::write(int data)
+int ZSPI::write(int data)
 {
-    int ret = mbed::SPI::write(data);
-    return (ret >= 0) ? ret : DEVICE_SPI_ERROR;
+    rxCh = 0;
+    txCh = data;
+    if (transfer(&txCh, 1, &rxCh, 1) < 0)
+        return DEVICE_SPI_ERROR;
+    return rxCh;
 }
 
+/**
+ * Writes and reads from the SPI bus concurrently. Waits (possibly un-scheduled) for transfer to
+ * finish.
+ *
+ * Either buffer can be NULL.
+ */
+int ZSPI::transfer(const uint8_t *txBuffer, uint32_t txSize, uint8_t *rxBuffer, uint32_t rxSize)
+{
+    rxBuf.buf = rxBuffer;
+    rxBuf.len = rxSize;
+    txBuf.buf = (uint8_t*)txBuffer;
+    txBuf.len = txSize;
+    if (spi_transceive(dev, &config,  txSize ? &txBufSet : NULL, rxSize ? &rxBufSet : NULL) < 0)
+        return DEVICE_SPI_ERROR;
 }
 
+} // namespace codal

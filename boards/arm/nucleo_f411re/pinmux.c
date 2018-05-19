@@ -7,6 +7,7 @@
 #include <pinmux/stm32/pinmux_stm32.h>
 
 #include "stm32f4xx_hal.h"
+#include "board_pinmux.h"
 
 #define LINE_PWM 0
 #define LINE_SDA 1
@@ -42,8 +43,9 @@ typedef enum
     PIN_CFG_EXT(pin, periph, line, mode, pull, af, 0, 0)
 
 #define PIN_CFG_EXT(pin, periph, line, mode, pull, af, chan, inv)                                  \
-    { { STM32_PIN_ ## pin,  ((mode) << STM32_MODER_SHIFT) | ((pull) << STM32_PUPDR_SHIFT) | (af) }, \
-        #periph, LINE_ ## line, chan, inv                                                            \
+    {                                                                                              \
+        {STM32_PIN_##pin, ((mode) << STM32_MODER_SHIFT) | ((pull) << STM32_PUPDR_SHIFT) | (af)},   \
+            #periph, LINE_##line, chan, inv                                                        \
     }
 
 struct ext_pin_config
@@ -209,12 +211,12 @@ int pinmux_setup_pwm(int pin, struct device **dev, int *channel)
     return pinmux_setup(pin, dev, channel, LINE_PWM);
 }
 
-int pinmux_setup_spi(int miso, int mosi, int sck, struct device **dev, int *channel)
+int pinmux_setup_spi(int mosi, int miso, int sck, struct device **dev)
 {
     *dev = NULL;
     return                                          //
-        pinmux_setup(miso, dev, NULL, LINE_MISO) || //
         pinmux_setup(mosi, dev, NULL, LINE_MOSI) || //
+        pinmux_setup(miso, dev, NULL, LINE_MISO) || //
         pinmux_setup(sck, dev, NULL, LINE_SCK);
 }
 
