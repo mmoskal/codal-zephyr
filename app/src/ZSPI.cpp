@@ -46,7 +46,7 @@ static ZSPI *instances[4];
 /**
  * Constructor.
  */
-ZSPI::ZSPI(Pin &mosi, Pin &miso, Pin &sclk) : codal::SPI()
+ZSPI::ZSPI(Pin *mosi, Pin *miso, Pin *sclk) : codal::SPI()
 {
 #ifdef ZSPI_DMA_SUPPORTED
     ZERO(dma_cfg);
@@ -56,7 +56,10 @@ ZSPI::ZSPI(Pin &mosi, Pin &miso, Pin &sclk) : codal::SPI()
     k_sem_init(&dma_done, 0, 1);
 #endif
 
-    pinmux_setup_spi((int)mosi.name, (int)miso.name, (int)sclk.name, &dev);
+    pinmux_setup_spi(mosi ? (int)mosi->name : -1, //
+                     miso ? (int)miso->name : -1, //
+                     sclk ? (int)sclk->name : -1, //
+                     &dev);
     ZERO(config);
     ZERO(rxBuf);
     ZERO(txBuf);
@@ -227,7 +230,7 @@ int ZSPI::transfer(const uint8_t *txBuffer, uint32_t txSize, uint8_t *rxBuffer, 
     txBuf.len = txSize;
     if (spi_transceive(dev, &config, txSize ? &txBufSet : NULL, rxSize ? &rxBufSet : NULL) < 0)
         return DEVICE_SPI_ERROR;
-    
+
     return 0;
 }
 

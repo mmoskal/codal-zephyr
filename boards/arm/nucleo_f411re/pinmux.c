@@ -188,6 +188,10 @@ const struct ext_pin_config pins[] = {
 
 static int pinmux_setup(int pin, struct device **dev, int *channel, int line)
 {
+    // if NC
+    if (pin < 0)
+        return 0;
+
     for (const struct ext_pin_config *p = pins; p->device_name; p++)
         if (p->cfg.pin_num == pin && p->line == line)
         {

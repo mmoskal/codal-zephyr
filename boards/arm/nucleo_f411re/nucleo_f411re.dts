@@ -53,6 +53,18 @@
 	status = "ok";
 };
 
+&spi1 {
+	status = "ok";
+};
+
+&spi2 {
+	status = "ok";
+};
+
+&spi3 {
+	status = "ok";
+};
+
 &i2c1 {
 	status = "ok";
 	clock-frequency = <I2C_BITRATE_FAST>;
